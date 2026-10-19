@@ -58,21 +58,31 @@ try {
 const feedbackForm = $("#feedbackForm");
 
 if (feedbackForm) {
-  feedbackForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
+  const status = $("#formStatus");
+  const btn = $("#submitBtn");
 
-    const status = $("#formStatus");
-    const btn = $("#submitBtn");
-
-    if (!status || !btn) {
-      console.error("Não encontrei #formStatus ou #submitBtn no HTML.");
+  const showMessage = (type, message) => {
+    if (!status) {
+      alert(message);
+      console.error("Elemento #formStatus não encontrado.");
       return;
     }
 
-    const showMessage = (type, message) => {
-      status.className = `form-status ${type}`;
-      status.textContent = message;
-    };
+    status.className = `form-status ${type}`;
+    status.textContent = message;
+    status.hidden = false;
+    status.style.display = "block";
+  };
+
+  // Impede o recarregamento e valida os dados
+  feedbackForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    if (!status || !btn) {
+      console.error("Não encontrei #formStatus ou #submitBtn no HTML.");
+      alert("Não foi possível verificar o formulário. Atualize a página.");
+      return;
+    }
 
     const formData = new FormData(feedbackForm);
     const rating = Number(formData.get("rating"));
@@ -80,39 +90,55 @@ if (feedbackForm) {
     const feedback = feedbackInput?.value.trim() || "";
     const confirm = $("#confirm");
 
+    // Valida a nota
     if (!rating || rating < 1 || rating > 5) {
       showMessage("error", "Escolha uma nota de 1 a 5 estrelas.");
       return;
     }
 
+    // Valida a categoria
     if (!category) {
       showMessage("error", "Selecione uma categoria.");
       return;
     }
 
-    if (feedback.length < 8 || feedback.length > 1200) {
+    // Valida o tamanho do comentário
+    if (feedback.length < 8) {
       showMessage(
         "error",
-        "O comentário precisa ter entre 8 e 1200 caracteres."
+        `Escreva pelo menos 8 caracteres. Você digitou ${feedback.length}.`
       );
+      feedbackInput?.focus();
       return;
     }
 
+    if (feedback.length > 1200) {
+      showMessage(
+        "error",
+        "O comentário pode ter no máximo 1200 caracteres."
+      );
+      feedbackInput?.focus();
+      return;
+    }
+
+    // Confirmação do usuário
     if (confirm && !confirm.checked) {
       showMessage("error", "Marque a confirmação antes de enviar.");
       return;
     }
 
+    // Verifica a conexão
     if (!db) {
       showMessage(
         "error",
-        "A conexão com o banco não foi iniciada. Confira o config.js e os scripts do index.html."
+        "A conexão com o banco não foi iniciada. Confira a configuração do site."
       );
       return;
     }
 
     btn.disabled = true;
     btn.textContent = "Enviando...";
+    status.textContent = "";
 
     try {
       const { error } = await db
@@ -125,31 +151,39 @@ if (feedbackForm) {
         if (error.code === "42501") {
           showMessage(
             "error",
-            "O banco bloqueou o envio por falta de permissão. É necessário revisar a política de INSERT."
+            "O banco bloqueou o envio. É necessário revisar as permissões."
           );
         } else if (error.code === "23514") {
           showMessage(
             "error",
-            "O banco rejeitou os dados por uma regra de validação. Confira a categoria e o comentário."
+            "O banco rejeitou os dados. Confira a categoria e o comentário."
           );
-        } else if (error.code === "PGRST204" || error.code === "42703") {
+        } else if (
+          error.code === "PGRST204" ||
+          error.code === "42703"
+        ) {
           showMessage(
             "error",
-            "O banco informou que uma coluna não corresponde ao formulário. Precisamos conferir os nomes das colunas."
+            "Há uma divergência nos nomes das colunas do banco."
           );
         } else {
           showMessage(
             "error",
-            `Falha ao enviar (${error.code || "erro"}): ${error.message || "Confira a conexão e as permissões do banco."}`
+            `Falha ao enviar (${error.code || "erro"}): ${
+              error.message || "Confira a conexão e as permissões."
+            }`
           );
         }
 
         return;
       }
 
+      // Limpa o formulário após o envio bem-sucedido
       feedbackForm.reset();
 
-      if (charCount) charCount.textContent = "0";
+      if (charCount) {
+        charCount.textContent = "0";
+      }
 
       showMessage(
         "success",
@@ -157,15 +191,26 @@ if (feedbackForm) {
       );
     } catch (error) {
       console.error("Erro inesperado ao enviar avaliação:", error);
+
       showMessage(
         "error",
-        "Não foi possível conectar ao banco. Verifique sua internet e a configuração do Supabase."
+        "Não foi possível conectar ao banco. Verifique sua internet e tente novamente."
       );
     } finally {
       btn.disabled = false;
       btn.innerHTML = 'Enviar avaliação <span>↗</span>';
     }
   });
+
+  // Atualiza o aviso imediatamente ao digitar
+  if (feedbackInput) {
+    feedbackInput.addEventListener("input", () => {
+      if (status && status.classList.contains("error")) {
+        status.textContent = "";
+        status.style.display = "none";
+      }
+    });
+  }
 } else {
   console.error("Não encontrei o formulário #feedbackForm no HTML.");
 }
